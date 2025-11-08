@@ -1,0 +1,35 @@
+{
+    "resource": "/evidences",
+    "path": "/evidences",
+    "httpMethod": "GET",
+    "headers": {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Host": "localhost:3000",
+        "User-Agent": "curl/7.64.1"
+    },
+    "multiValueHeaders": {
+        "Accept": [
+            "application/json"
+        ]
+    },
+    "queryStringParameters": null,
+    "multiValueQueryStringParameters": null,
+    "pathParameters": null,
+    "stageVariables": null,
+    "requestContext": {
+        "resourceId": "abc123",
+        "apiId": "localApi",
+        "resourcePath": "/evidences",
+        "httpMethod": "GET",
+        "requestId": "req-0001",
+        "accountId": "123456789012",
+        "stage": "dev",
+        "identity": {
+            "sourceIp": "127.0.0.1",
+            "userAgent": "curl/7.64.1"
+        }
+    },
+    "body": null,
+    "isBase64Encoded": false
+}
