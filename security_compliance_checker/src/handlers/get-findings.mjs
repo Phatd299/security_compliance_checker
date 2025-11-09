@@ -5,7 +5,7 @@ const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
 // Get the DynamoDB table name from environment variables
-const tableName = process.env.FINDINGS_TABLE;
+const tableName = process.env.FINDING_TABLE;
 
 /**
  * Get findings based on user's Cognito group.

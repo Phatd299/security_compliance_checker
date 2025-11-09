@@ -28,11 +28,11 @@ Resources:
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref FindingsTable
+            TableName: !Ref EvidenceTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          FINDINGS_TABLE: !Ref FindingsTable
+          EVIDENCE_TABLE: !Ref EvidenceTable
       Events:
         Api:
           Type: Api
@@ -43,7 +43,7 @@ Resources:
   postEvidenceFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/put-item.putItemHandler
+      Handler: src/handlers/post-evidences.putItemHandler
       Runtime: nodejs22.x
       Architectures:
         - x86_64
@@ -53,20 +53,21 @@ Resources:
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
+            TableName: !Ref EvidenceTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
+          EVIDENCE_TABLE: !Ref EvidenceTable
       Events:
         Api:
           Type: Api
           Properties:
+            Path: /evidences
 
   getFindingsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/get-by-id.getByIdHandler
+      Handler: src/handlers/get-findings.getFindingsHandler
       Runtime: nodejs22.x
       Architectures:
         - x86_64
@@ -76,22 +77,22 @@ Resources:
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
+            TableName: !Ref FindingTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
+          FINDING_TABLE: !Ref FindingTable
       Events:
         Api:
           Type: Api
           Properties:
-            Path: /{id}
+            Path: /findings
             Method: GET
 
   postFindingFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/put-item.putItemHandler
+      Handler: src/handlers/post-findings.putItemHandler
       Runtime: nodejs22.x
       Architectures:
         - x86_64
@@ -101,22 +102,22 @@ Resources:
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SampleTable
+            TableName: !Ref FindingTable
       Environment:
         Variables:
           # Make table name accessible as environment variable from function code during execution
-          SAMPLE_TABLE: !Ref SampleTable
+          FINDING_TABLE: !Ref FindingTable
       Events:
         Api:
           Type: Api
           Properties:
-            Path: /
+            Path: /findings
             Method: POST
 
     # DynamoDB Table for Findings
 
 # DynamoDB Tables
-  FindingsTable:
+  FindingTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub "${AWS::StackName}-Findings"
@@ -124,12 +125,42 @@ Resources:
       AttributeDefinitions:
         - AttributeName: findingId
           AttributeType: S
+        - AttributeName: assignedTo
+          AttributeType: S
       KeySchema:
         - AttributeName: findingId
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: assignedToIndex
+          KeySchema:
+            - AttributeName: assignedTo
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: Project
           Value: SecurityComplianceChecker
+  
+  EvidenceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-Evidence"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: evidenceId
+          AttributeType: S
+        - AttributeName: findingId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: evidenceId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: findingIdIndex
+          KeySchema:
+            - AttributeName: findingId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
 
 
@@ -141,3 +172,7 @@ Outputs:
   FindingsTableNam:
     Description: "DynamoDB Findings Table Name"
     Value: !Ref FindingsTable
+  
+  EvidenceTableName:
+    Description: "DynamoDB Evidence Table Name"
+    Value: !Ref EvidenceTable

@@ -4,7 +4,7 @@ const client = new DynamoDBClient({});
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
 // Get the DynamoDB table name from environment variables
-const tableName = process.env.FINDINGS_TABLE;
+const tableName = process.env.EVIDENCE_TABLE;
 
 // Handler to get all evidences
 export const getEvidencesHandler = async (event) => {
