@@ -13,42 +13,74 @@ Globals:
     MemorySize: 128
     Timeout: 100
 
+Parameters:
+  CognitoUserPoolArn:
+    Type: String
+    Description: ARN of the Cognito User Pool to use for API authorization
 
 Resources:
 
-# Lambda Functions
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: SecurityComplianceUserPool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: WebAppClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: SecurityComplianceAPI
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+
   getEvidencesFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/get-evidences.getEvidencesHandler
-      Runtime: nodejs22.x
-      MemorySize: 128
-      Timeout: 100
       Description: A simple example includes a HTTP get method to get all items from a DynamoDB table.
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
             TableName: !Ref EvidenceTable
       Environment:
         Variables:
-          # Make table name accessible as environment variable from function code during execution
           EVIDENCE_TABLE: !Ref EvidenceTable
       Events:
         Api:
           Type: Api
           Properties:
-            Path: /
+            RestApiId: !Ref ApiGateway
+            Path: /evidence
             Method: GET
 
   postEvidenceFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/post-evidences.putItemHandler
-      Runtime: nodejs22.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
       Description: A simple example includes a HTTP post method to add one item to a DynamoDB table.
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
@@ -62,17 +94,14 @@ Resources:
         Api:
           Type: Api
           Properties:
-            Path: /evidences
+            RestApiId: !Ref ApiGateway
+            Path: /evidence
+            Method: POST
 
   getFindingsFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/get-findings.getFindingsHandler
-      Runtime: nodejs22.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
       Description: A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
@@ -86,18 +115,14 @@ Resources:
         Api:
           Type: Api
           Properties:
-            Path: /findings
+            RestApiId: !Ref ApiGateway
+            Path: /finding
             Method: GET
 
   postFindingFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/post-findings.putItemHandler
-      Runtime: nodejs22.x
-      Architectures:
-        - x86_64
-      MemorySize: 128
-      Timeout: 100
       Description: A simple example includes a HTTP post method to add one item to a DynamoDB table.
       Policies:
         # Give Create/Read/Update/Delete Permissions to the SampleTable
@@ -111,12 +136,10 @@ Resources:
         Api:
           Type: Api
           Properties:
-            Path: /findings
+            RestApiId: !Ref ApiGateway
+            Path: /finding
             Method: POST
 
-    # DynamoDB Table for Findings
-
-# DynamoDB Tables
   FindingTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -162,17 +185,15 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-
-
 Outputs:
   WebEndpoint:
     Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
-  
-  FindingsTableNam:
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
+
+  FindingTableName:
     Description: "DynamoDB Findings Table Name"
-    Value: !Ref FindingsTable
-  
+    Value: !Ref FindingTable
+
   EvidenceTableName:
     Description: "DynamoDB Evidence Table Name"
     Value: !Ref EvidenceTable
