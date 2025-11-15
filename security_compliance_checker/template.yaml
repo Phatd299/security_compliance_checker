@@ -13,11 +13,6 @@ Globals:
     MemorySize: 128
     Timeout: 100
 
-Parameters:
-  CognitoUserPoolArn:
-    Type: String
-    Description: ARN of the Cognito User Pool to use for API authorization
-
 Resources:
 
   UserPool:

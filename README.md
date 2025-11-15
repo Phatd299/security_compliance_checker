@@ -18,7 +18,7 @@ This project is built entirely on AWS serverless services.
 
 | Attribute | Type | Key Type |
 |---|---|---|
-| findingId | String | Primary Key. Unique ID for each finding. |
+| findingId | String | Primary  Key. Unique ID for each finding. |
 | projectId | String | ID of the project this finding. |
 | title | String | Short description of the finding. |
 | status | String | "Open" or "Completed". |
