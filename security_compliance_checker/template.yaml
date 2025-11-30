@@ -13,34 +13,13 @@ Globals:
     MemorySize: 128
     Timeout: 100
 
+Parameters:
+  PrerequisiteStackName:
+    Type: String
+    Default: security-compliance-checker-prerequisite
+    Description: Name of the prerequisite stack that contains Cognito, DynamoDB, S3, and SNS
+
 Resources:
-
-  UserPool:
-    Type: AWS::Cognito::UserPool
-    Properties:
-      UserPoolName: SecurityComplianceUserPool
-      AutoVerifiedAttributes:
-        - email
-      UsernameAttributes:
-        - email
-      Policies:
-        PasswordPolicy:
-          MinimumLength: 8
-          RequireUppercase: true
-          RequireLowercase: true
-          RequireNumbers: true
-          RequireSymbols: false
-
-  UserPoolClient:
-    Type: AWS::Cognito::UserPoolClient
-    Properties:
-      ClientName: WebAppClient
-      UserPoolId: !Ref UserPool
-      GenerateSecret: false
-      ExplicitAuthFlows:
-        - ALLOW_USER_PASSWORD_AUTH
-        - ALLOW_REFRESH_TOKEN_AUTH
-        - ALLOW_USER_SRP_AUTH
 
   ApiGateway:
     Type: AWS::Serverless::Api
@@ -51,19 +30,53 @@ Resources:
         DefaultAuthorizer: CognitoAuthorizer
         Authorizers:
           CognitoAuthorizer:
-            UserPoolArn: !GetAtt UserPool.Arn
+            UserPoolArn: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - UserPoolArn
 
-  getEvidencesFunction:
+  GetEvidencesFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/get-evidences.getEvidencesHandler
-      Description: A simple example includes a HTTP get method to get all items from a DynamoDB table.
+      Description: Get evidences - returns all for admin, filtered by assigned findings for regular users
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref EvidenceTable
+            TableName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - CaseTableName
+        - S3ReadWritePolicy:
+            BucketName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - EvidenceBucketName
+        - SNSPublishMessagePolicy:
+            TopicName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - NotificationTopicArn
       Environment:
         Variables:
-          EVIDENCE_TABLE: !Ref EvidenceTable
+          TABLE_NAME: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - CaseTableName
+          EVIDENCE_BUCKET: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - EvidenceBucketName
+          SNS_TOPIC_ARN: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - NotificationTopicArn
       Events:
         Api:
           Type: Api
@@ -71,20 +84,50 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /evidence
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
-  postEvidenceFunction:
+  PostEvidenceFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/post-evidences.putItemHandler
-      Description: A simple example includes a HTTP post method to add one item to a DynamoDB table.
+      Handler: src/handlers/post-evidences.postEvidencesHandler
+      Description: Create evidence - admins can create for any finding, users only for assigned findings
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref EvidenceTable
+            TableName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - CaseTableName
+        - S3ReadWritePolicy:
+            BucketName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - EvidenceBucketName
+        - SNSPublishMessagePolicy:
+            TopicName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - NotificationTopicArn
       Environment:
         Variables:
-          # Make table name accessible as environment variable from function code during execution
-          EVIDENCE_TABLE: !Ref EvidenceTable
+          TABLE_NAME: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - CaseTableName
+          EVIDENCE_BUCKET: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - EvidenceBucketName
+          SNS_TOPIC_ARN: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - NotificationTopicArn
       Events:
         Api:
           Type: Api
@@ -92,20 +135,50 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /evidence
             Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
-  getFindingsFunction:
+  GetFindingsFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/handlers/get-findings.getFindingsHandler
-      Description: A simple example includes a HTTP get method to get one item by id from a DynamoDB table.
+      Description: Get findings - returns all for admin, only assigned findings for regular users
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref FindingTable
+            TableName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - CaseTableName
+        - S3ReadWritePolicy:
+            BucketName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - EvidenceBucketName
+        - SNSPublishMessagePolicy:
+            TopicName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - NotificationTopicArn
       Environment:
         Variables:
-          # Make table name accessible as environment variable from function code during execution
-          FINDING_TABLE: !Ref FindingTable
+          TABLE_NAME: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - CaseTableName
+          EVIDENCE_BUCKET: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - EvidenceBucketName
+          SNS_TOPIC_ARN: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - NotificationTopicArn
       Events:
         Api:
           Type: Api
@@ -113,20 +186,50 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /finding
             Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
 
-  postFindingFunction:
+  PostFindingFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Handler: src/handlers/post-findings.putItemHandler
-      Description: A simple example includes a HTTP post method to add one item to a DynamoDB table.
+      Handler: src/handlers/post-findings.postFindingsHandler
+      Description: Create finding - admin only
       Policies:
-        # Give Create/Read/Update/Delete Permissions to the SampleTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref FindingTable
+            TableName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - CaseTableName
+        - S3ReadWritePolicy:
+            BucketName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - EvidenceBucketName
+        - SNSPublishMessagePolicy:
+            TopicName: !ImportValue 
+              Fn::Join:
+                - '-'
+                - - !Ref PrerequisiteStackName
+                  - NotificationTopicArn
       Environment:
         Variables:
-          # Make table name accessible as environment variable from function code during execution
-          FINDING_TABLE: !Ref FindingTable
+          TABLE_NAME: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - CaseTableName
+          EVIDENCE_BUCKET: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - EvidenceBucketName
+          SNS_TOPIC_ARN: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - NotificationTopicArn
       Events:
         Api:
           Type: Api
@@ -134,61 +237,52 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /finding
             Method: POST
-
-  FindingTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub "${AWS::StackName}-Findings"
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: findingId
-          AttributeType: S
-        - AttributeName: assignedTo
-          AttributeType: S
-      KeySchema:
-        - AttributeName: findingId
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: assignedToIndex
-          KeySchema:
-            - AttributeName: assignedTo
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-      Tags:
-        - Key: Project
-          Value: SecurityComplianceChecker
+            Auth:
+              Authorizer: CognitoAuthorizer
   
-  EvidenceTable:
-    Type: AWS::DynamoDB::Table
+  LoginFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      TableName: !Sub "${AWS::StackName}-Evidence"
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: evidenceId
-          AttributeType: S
-        - AttributeName: findingId
-          AttributeType: S
-      KeySchema:
-        - AttributeName: evidenceId
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: findingIdIndex
-          KeySchema:
-            - AttributeName: findingId
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
+      Handler: src/handlers/login.loginHandler
+      Description: Login function to authenticate users with Cognito
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminInitiateAuth
+              Resource: !ImportValue 
+                Fn::Join:
+                  - '-'
+                  - - !Ref PrerequisiteStackName
+                    - UserPoolArn
+      Environment:
+        Variables:
+          USER_POOL_ID: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - UserPoolId
+          CLIENT_ID: !ImportValue 
+            Fn::Join:
+              - '-'
+              - - !Ref PrerequisiteStackName
+                - UserPoolClientId
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /login
+            Method: POST
+            Auth:
+              Authorizer: NONE
 
 Outputs:
   WebEndpoint:
     Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.${AWS::URLSuffix}/Prod/"
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
 
-  FindingTableName:
-    Description: "DynamoDB Findings Table Name"
-    Value: !Ref FindingTable
-
-  EvidenceTableName:
-    Description: "DynamoDB Evidence Table Name"
-    Value: !Ref EvidenceTable
+  PrerequisiteStackReference:
+    Description: "Reference to prerequisite stack resources"
+    Value: !Ref PrerequisiteStackName

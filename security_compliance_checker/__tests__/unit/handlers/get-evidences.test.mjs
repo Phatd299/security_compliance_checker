@@ -1,50 +1,46 @@
-import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
-import { mockClient } from "aws-sdk-client-mock";
+import { mockClient } from 'aws-sdk-client-mock';
+import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { getEvidencesHandler } from '../../../src/handlers/get-evidences.mjs';
 
-// Import your Lambda handler
-import { getEvidencesHandler } from "../../../src/handlers/get-evidences.mjs";
-
-// Create a mock DynamoDB client
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-describe("getEvidencesHandler", () => {
-  beforeEach(() => {
-    ddbMock.reset();
+beforeEach(() => {
+  ddbMock.reset();
+  process.env.TABLE_NAME = 'TestTable';
+});
+
+test('getEvidences returns items successfully', async () => {
+  // Mock DynamoDB scan response
+  ddbMock.on(ScanCommand).resolves({
+    Items: [{ id: 1, name: 'evidence1' }, { id: 2, name: 'evidence2' }],
   });
 
-  it("should return all evidences from DynamoDB", async () => {
-    // Mock the ScanCommand to return test data
-    ddbMock.on(ScanCommand).resolves({
-      Items: [
-        { evidenceId: "e1", findingId: "f1", title: "Evidence 1" },
-        { evidenceId: "e2", findingId: "f1", title: "Evidence 2" },
-      ]
-    });
+  const event = { httpMethod: 'GET', path: '/evidences' };
+  const result = await getEvidencesHandler(event);
 
-    // Mock API Gateway event
-    const event = {
-      httpMethod: "GET",
-    };
+  expect(result.statusCode).toBe(200);
+  const body = JSON.parse(result.body);
+  expect(body).toHaveLength(2);
+  expect(body[0].name).toBe('evidence1');
+});
 
-    const result = await getEvidencesHandler(event);
+test('getEvidences returns 405 for non-GET method', async () => {
+  const event = { httpMethod: 'POST', path: '/evidences' };
+  const result = await getEvidencesHandler(event);
 
-    // Assert
-    expect(result.statusCode).toBe(200);
-    const body = JSON.parse(result.body);
-    expect(body.length).toBe(2);
-    expect(body[0].evidenceId).toBe("e1");
-    expect(body[1].title).toBe("Evidence 2");
-  });
+  expect(result.statusCode).toBe(405);
+  const body = JSON.parse(result.body);
+  expect(body.error).toMatch(/not allowed/);
+});
 
-  it("should return 500 on error", async () => {
-    // Force ScanCommand to throw
-    ddbMock.on(ScanCommand).rejects(new Error("DynamoDB error"));
+test('getEvidences returns 500 on DynamoDB error', async () => {
+  // Mock DynamoDB to throw error
+  ddbMock.on(ScanCommand).rejects(new Error('DynamoDB failure'));
 
-    const event = { httpMethod: "GET" };
-    const result = await getEvidencesHandler(event);
+  const event = { httpMethod: 'GET', path: '/evidences' };
+  const result = await getEvidencesHandler(event);
 
-    expect(result.statusCode).toBe(500);
-    const body = JSON.parse(result.body);
-    expect(body.error).toBe("Failed to fetch evidences");
-  });
+  expect(result.statusCode).toBe(500);
+  const body = JSON.parse(result.body);
+  expect(body.error).toBe('Failed to fetch evidences');
 });

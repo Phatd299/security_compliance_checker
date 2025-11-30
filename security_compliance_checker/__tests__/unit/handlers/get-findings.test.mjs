@@ -1,94 +1,81 @@
-import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { mockClient } from "aws-sdk-client-mock";
+import { mockClient } from 'aws-sdk-client-mock';
+import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { getFindingsHandler } from '../../../src/handlers/get-findings.mjs';
 
-// Import your Lambda handler
-import { getFindingsHandler } from "../../../src/handlers/get-findings.mjs";
-
-// Create a mock DynamoDB client
+// Mock DynamoDB DocumentClient
 const ddbMock = mockClient(DynamoDBDocumentClient);
 
-describe("getFindingsHandler", () => {
-  beforeEach(() => {
-    ddbMock.reset();
+beforeEach(() => {
+  ddbMock.reset();
+  process.env.TABLE_NAME = 'TestTable';
+});
+
+test('Admin user returns all findings (ScanCommand)', async () => {
+  ddbMock.on(ScanCommand).resolves({
+    Items: [{ id: 1, title: 'f1' }, { id: 2, title: 'f2' }]
   });
 
-  it("should return all findings for admin (ScanCommand)", async () => {
-    ddbMock.on(ScanCommand).resolves({
-      Items: [
-        { findingId: "f1", title: "Finding 1" },
-        { findingId: "f2", title: "Finding 2" }
-      ]
-    });
+  const event = {
+    httpMethod: 'GET',
+    requestContext: { authorizer: { claims: { 'sub': 'adminUser', 'cognito:groups': ['admin'] } } }
+  };
 
-    const event = {
-      httpMethod: "GET",
-      requestContext: {
-        authorizer: {
-          claims: {
-            sub: "user-123",
-            // simulate cognito groups as an array containing 'admin'
-            'cognito:groups': ['admin']
-          }
-        }
-      }
-    };
+  const result = await getFindingsHandler(event);
 
-    const result = await getFindingsHandler(event);
+  expect(result.statusCode).toBe(200);
+  const body = JSON.parse(result.body);
+  expect(body.findings).toHaveLength(2);
+  expect(body.count).toBe(2);
+  expect(body.findings[0].title).toBe('f1');
+});
 
-    expect(result.statusCode).toBe(200);
-    const body = JSON.parse(result.body);
-    expect(body.findings).toHaveLength(2);
-    expect(body.count).toBe(2);
-    expect(body.findings[0].findingId).toBe('f1');
+test('Non-admin user returns filtered findings (QueryCommand)', async () => {
+  ddbMock.on(QueryCommand).resolves({
+    Items: [{ id: 3, title: 'f3' }]
   });
 
-  it("should return assigned findings for normal user (QueryCommand)", async () => {
-    ddbMock.on(QueryCommand).resolves({
-      Items: [
-        { findingId: "f3", assignedTo: "user-123", title: "Assigned Finding" }
-      ]
-    });
+  const event = {
+    httpMethod: 'GET',
+    requestContext: { authorizer: { claims: { 'sub': 'user1', 'cognito:groups': [] } } }
+  };
 
-    const event = {
-      httpMethod: "GET",
-      requestContext: {
-        authorizer: {
-          claims: {
-            sub: "user-123",
-            'cognito:groups': []
-          }
-        }
-      }
-    };
+  const result = await getFindingsHandler(event);
 
-    const result = await getFindingsHandler(event);
+  expect(result.statusCode).toBe(200);
+  const body = JSON.parse(result.body);
+  expect(body.findings).toHaveLength(1);
+  expect(body.findings[0].title).toBe('f3');
+});
 
-    expect(result.statusCode).toBe(200);
-    const body = JSON.parse(result.body);
-    expect(body.findings).toHaveLength(1);
-    expect(body.findings[0].assignedTo).toBe('user-123');
-  });
+test('Returns 405 for non-GET method', async () => {
+  const event = { httpMethod: 'POST' };
+  const result = await getFindingsHandler(event);
 
-  it("should return 500 on DynamoDB error", async () => {
-    ddbMock.on(QueryCommand).rejects(new Error('DynamoDB failure'));
+  expect(result.statusCode).toBe(405);
+  const body = JSON.parse(result.body);
+  expect(body.message).toMatch(/Method not allowed/);
+});
 
-    const event = {
-      httpMethod: "GET",
-      requestContext: {
-        authorizer: {
-          claims: {
-            sub: "user-123",
-            'cognito:groups': []
-          }
-        }
-      }
-    };
+test('Returns 401 if authorizer claims missing', async () => {
+  const event = { httpMethod: 'GET', requestContext: {} };
+  const result = await getFindingsHandler(event);
 
-    const result = await getFindingsHandler(event);
+  expect(result.statusCode).toBe(401);
+  const body = JSON.parse(result.body);
+  expect(body.message).toBe('Unauthorized');
+});
 
-    expect(result.statusCode).toBe(500);
-    const body = JSON.parse(result.body);
-    expect(body.message).toBe('Internal server error');
-    expect(body.errorMsg).toBeDefined();
-  });
+test('Returns 500 on DynamoDB error', async () => {
+  ddbMock.on(ScanCommand).rejects(new Error('DynamoDB failure'));
+
+  const event = {
+    httpMethod: 'GET',
+    requestContext: { authorizer: { claims: { 'sub': 'adminUser', 'cognito:groups': ['admin'] } } }
+  };
+
+  const result = await getFindingsHandler(event);
+
+  expect(result.statusCode).toBe(500);
+  const body = JSON.parse(result.body);
+  expect(body.message).toBe('Internal server error');
 });

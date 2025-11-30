@@ -1,0 +1,294 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  Prerequisite stack for Security Compliance Checker.
+  Creates Cognito User Pool with Admin and Standard user groups for authentication.
+
+Parameters:
+  StackName:
+    Type: String
+    Default: security-compliance-checker-prerequisite
+    Description: Name prefix for resources
+
+Resources:
+  # Cognito User Pool
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${StackName}-UserPool"
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      MfaConfiguration: OFF
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+        UnusedAccountValidityDays: 7
+      UserPoolTags:
+        Application: SecurityComplianceChecker
+        Environment: Prerequisite
+
+  # User Pool Client (for authentication)
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub "${StackName}-UserPoolClient"
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ADMIN_NO_SRP_AUTH
+        - USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      # Note: Groups are automatically included in ID token as 'cognito:groups' claim
+      # when users are assigned to groups (Admin or Standard)
+
+  # Admin User Group
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admin
+      UserPoolId: !Ref UserPool
+      Description: Administrators with full access to the Security Compliance Checker
+      Precedence: 1
+
+  # Standard User Group
+  StandardGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Standard
+      UserPoolId: !Ref UserPool
+      Description: Standard users with limited access to the Security Compliance Checker
+      Precedence: 2
+
+  # DynamoDB Table for Findings and Evidences
+  CaseTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${StackName}-CaseTable-Prod"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: assignedTo
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: assignedToIndex
+          KeySchema:
+            - AttributeName: assignedTo
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Application
+          Value: SecurityComplianceChecker
+        - Key: Environment
+          Value: Prerequisite
+
+  # S3 Bucket for Evidence Files
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}-evidence-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 90
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Encryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Application
+          Value: SecurityComplianceChecker
+        - Key: Environment
+          Value: Prerequisite
+
+  # S3 Bucket Policy for Lambda Access
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Statement:
+          - Sid: AllowLambdaAccess
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: !Sub "${EvidenceBucket}/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  # SNS Topic for Notifications
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${StackName}-notifications"
+      DisplayName: Security Compliance Checker Notifications
+      Tags:
+        - Key: Application
+          Value: SecurityComplianceChecker
+        - Key: Environment
+          Value: Prerequisite
+
+Outputs:
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+
+  UserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !GetAtt UserPool.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolArn"
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  UserPoolProviderName:
+    Description: Cognito User Pool Provider Name
+    Value: !GetAtt UserPool.ProviderName
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolProviderName"
+
+  AdminGroupName:
+    Description: Admin Group Name
+    Value: Admin
+    Export:
+      Name: !Sub "${AWS::StackName}-AdminGroupName"
+
+  StandardGroupName:
+    Description: Standard Group Name
+    Value: Standard
+    Export:
+      Name: !Sub "${AWS::StackName}-StandardGroupName"
+
+  CaseTableName:
+    Description: DynamoDB Case Table Name
+    Value: !Ref CaseTable
+    Export:
+      Name: !Sub "${AWS::StackName}-CaseTableName"
+
+  CaseTableArn:
+    Description: DynamoDB Case Table ARN
+    Value: !GetAtt CaseTable.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CaseTableArn"
+
+  EvidenceBucketName:
+    Description: S3 Bucket Name for Evidence Files
+    Value: !Ref EvidenceBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-EvidenceBucketName"
+
+  EvidenceBucketArn:
+    Description: S3 Bucket ARN for Evidence Files
+    Value: !GetAtt EvidenceBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-EvidenceBucketArn"
+
+  NotificationTopicArn:
+    Description: SNS Topic ARN for Notifications
+    Value: !Ref NotificationTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-NotificationTopicArn"
+
+  SetupInstructions:
+    Description: Instructions for creating test users
+    Value: |
+      To create test users, use AWS CLI:
+      
+      1. Create Admin User:
+      aws cognito-idp admin-create-user \
+        --user-pool-id <UserPoolId> \
+        --username admin@example.com \
+        --user-attributes Name=email,Value=admin@example.com Name=name,Value=Admin \
+        --temporary-password TempPass123! \
+        --message-action SUPPRESS
+      
+      aws cognito-idp admin-add-user-to-group \
+        --user-pool-id <UserPoolId> \
+        --username admin@example.com \
+        --group-name Admin
+      
+      aws cognito-idp admin-set-user-password \
+        --user-pool-id <UserPoolId> \
+        --username admin@example.com \
+        --password AdminPass123! \
+        --permanent
+      
+      2. Create Standard User:
+      aws cognito-idp admin-create-user \
+        --user-pool-id <UserPoolId> \
+        --username user@example.com \
+        --user-attributes Name=email,Value=user@example.com Name=name,Value=User \
+        --temporary-password TempPass123! \
+        --message-action SUPPRESS
+      
+      aws cognito-idp admin-add-user-to-group \
+        --user-pool-id <UserPoolId> \
+        --username user@example.com \
+        --group-name Standard
+      
+      aws cognito-idp admin-set-user-password \
+        --user-pool-id <UserPoolId> \
+        --username user@example.com \
+        --password UserPass123! \
+        --permanent
+

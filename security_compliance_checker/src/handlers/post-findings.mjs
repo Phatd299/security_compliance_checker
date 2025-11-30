@@ -1,50 +1,49 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-const client = new DynamoDBClient({});
+
+const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
 const ddbDocClient = DynamoDBDocumentClient.from(client);
 
-// Get the DynamoDB table name from environment variables
-const tableName = process.env.FINDING_TABLE || process.env.SAMPLE_TABLE;
+const tableName = process.env.TABLE_NAME;
 
-/**
- * A simple example includes a HTTP post method to add one item to a DynamoDB table.
- */
-export const putItemHandler = async (event) => {
-    if (event.httpMethod !== 'POST') {
-        throw new Error(`postMethod only accepts POST method, you tried: ${event.httpMethod} method.`);
-    }
-    // All log statements are written to CloudWatch
-    console.info('received:', event);
+const createResponse = (statusCode, body) => ({
+  statusCode,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body)
+});
 
-    // Get id and name from the body of the request
-    const body = JSON.parse(event.body);
-    const id = body.id;
-    const name = body.name;
+export const postFindingsHandler = async (event) => {
+  if (event.httpMethod !== 'POST') {
+    return createResponse(405, { message: `Method not allowed: ${event.httpMethod}` });
+  }
 
-    // Creates a new item, or replaces an old item with a new item
-    // https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/DynamoDB/DocumentClient.html#put-property
-    var params = {
-        TableName : tableName,
-        Item: { id : id, name: name }
-    };
+  const claims = event?.requestContext?.authorizer?.claims;
+  if (!claims) return createResponse(401, { message: 'Unauthorized - no claims found' });
 
-    try {
-        const data = await ddbDocClient.send(new PutCommand(params));
-        console.log("Success - item added or updated", data);
-    } catch (err) {
-        console.error("Error", err);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: 'Failed to put item', errorMsg: err.message })
-        };
-    }
+  const userGroups = claims['cognito:groups'] || [];
+  const isAdmin = userGroups.includes('admin');
+  if (!isAdmin) return createResponse(403, { message: 'Forbidden - Admins only' });
 
-    const response = {
-        statusCode: 200,
-        body: JSON.stringify(body)
-    };
+  let body;
+  try {
+    body = JSON.parse(event.body);
+  } catch {
+    return createResponse(400, { message: 'Invalid JSON' });
+  }
 
-    // All log statements are written to CloudWatch
-    console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);
-    return response;
+  const { id, name } = body;
+  if (!id || !name) return createResponse(400, { message: 'Missing id or name' });
+
+  const params = {
+    TableName: tableName,
+    Item: { id, name, createdAt: new Date().toISOString(), createdBy: claims['sub'] }
+  };
+
+  try {
+    await ddbDocClient.send(new PutCommand(params));
+    return createResponse(200, body);
+  } catch (err) {
+    console.error('Failed to put item', err);
+    return createResponse(500, { message: 'Failed to put item', errorMsg: err.message });
+  }
 };

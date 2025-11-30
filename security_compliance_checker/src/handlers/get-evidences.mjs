@@ -1,40 +1,41 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
-const client = new DynamoDBClient({});
-const ddbDocClient = DynamoDBDocumentClient.from(client);
+import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
 
-// Get the DynamoDB table name from environment variables
-const tableName = process.env.EVIDENCE_TABLE;
+const tableName = process.env.TABLE_NAME;
 
-// Handler to get all evidences
+const ddbClient = new DynamoDBClient({});
+const ddbDocClient = DynamoDBDocumentClient.from(ddbClient);
+
 export const getEvidencesHandler = async (event) => {
+  console.info('Received event:', event);
+
   if (event.httpMethod !== 'GET') {
-    throw new Error(`getEvidences only accepts GET method, you tried: ${event.httpMethod}`);
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: `Method ${event.httpMethod} not allowed` }),
+    };
   }
-  console.info('received:', event);
 
-  const params = {
-    TableName: tableName,
-  };
-
-  let items = [];
+  const params = { TableName: tableName };
   try {
-    const data = await ddbDocClient.send(new ScanCommand(params));
-    items = data.Items || [];
+    let items = [];
+    let ExclusiveStartKey;
+
+    do {
+      const data = await ddbDocClient.send(new ScanCommand({ ...params, ExclusiveStartKey }));
+      items = items.concat(data.Items || []);
+      ExclusiveStartKey = data.LastEvaluatedKey;
+    } while (ExclusiveStartKey);
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify(items),
+    };
   } catch (err) {
-    console.error("Error", err);
+    console.error({ message: "Failed to scan DynamoDB", error: err });
     return {
       statusCode: 500,
       body: JSON.stringify({ error: "Failed to fetch evidences" }),
     };
   }
-
-  const response = {
-    statusCode: 200,
-    body: JSON.stringify(items),
-  };
-
-  console.info(`response from: ${event.path} statusCode: ${response.statusCode} body: ${response.body}`);
-  return response;
 };
-

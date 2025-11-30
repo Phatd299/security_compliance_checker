@@ -13,26 +13,39 @@ This project is built entirely on AWS serverless services.
 ![AWS Services](image.png)
 
 ## Data Model
+Single-table approach with AWS DynamoDB
 
-1. /findings scheme
+| PK                  | SK                    | type     | attributes                            |
+| ------------------- | --------------------- | -------- | ------------------------------------- |
+| CASE#<caseId>       | FINDING#<findingId>   | FINDING  | title, description, status, , assignTo, createdAt |
+| FINDING#<findingId> | EVIDENCE#<evidenceId> | EVIDENCE | fileName, s3Url, uploadedAt, status   |
 
-| Attribute | Type | Key Type |
-|---|---|---|
-| findingId | String | Primary  Key. Unique ID for each finding. |
-| projectId | String | ID of the project this finding. |
-| title | String | Short description of the finding. |
-| status | String | "Open" or "Completed". |
-| createdAt | String | ISO timestamp of creation. |
+## Prerequisite
 
-2. /evidences scheme
+### Create Cognito User Pool with users:
 
-| Attribute | Type | Key Type |
-|---|---|---|
-| evidenceId | String | Primary Key |
-| findingId | String | Foreign key to link evidence to a finding. |
-| s3Key | String | Object key in S3. |
-| s3Url | String | Optional access URL or presigned URL. |
-| uploadedAt | String | ISO timestamp of creation. |
+```AWS CLI
+aws cognito-idp create-user-pool \
+  --pool-name MyAppUserPool \
+  --auto-verified-attributes email \
+  --policies '{
+      "PasswordPolicy": {
+        "MinimumLength": 8,
+        "RequireLowercase": true,
+        "RequireUppercase": true,
+        "RequireNumbers": true,
+        "RequireSymbols": false
+      }
+    }'
+```
+
+Then:
+
+```AWS CLI
+
+
+
+
 
 
 
